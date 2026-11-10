@@ -1,0 +1,3 @@
+# old,new  (paths or full URLs). Overrides always win, confidence 1.0.
+old,new
+/old-promo-page,/offers/

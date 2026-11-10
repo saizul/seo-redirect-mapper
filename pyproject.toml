@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "redirect-mapper"
+version = "0.1.0"
+description = "Build and validate 301 redirect maps for site migrations (Nginx, Apache, Cloudflare, WordPress)."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Saizul Amin" }]
+requires-python = ">=3.9"
+keywords = ["seo", "redirects", "301", "site-migration", "nginx", "htaccess", "wordpress"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP :: Site Management",
+]
+dependencies = [
+    "requests>=2.28",
+    "beautifulsoup4>=4.11",
+    "rich>=13",
+]
+
+[project.optional-dependencies]
+fast = ["rapidfuzz>=3"]
+dev = ["pytest>=7", "ruff>=0.5"]
+
+[project.urls]
+Homepage = "https://saizul.com"
+
+[project.scripts]
+redirect-mapper = "redirect_mapper.cli:main"
+
+[tool.setuptools]
+packages = ["redirect_mapper"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["redirect_mapper", "conftest"]
