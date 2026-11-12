@@ -162,8 +162,8 @@ MIT. Author: [Saizul Amin](https://saizul.com).
 A multi-arch image (linux/amd64, linux/arm64) is published to GitHub Packages:
 
 ```bash
-docker pull ghcr.io/saizul/seo-redirect-mapperatest
-docker run --rm -v "$PWD:/work" ghcr.io/saizul/seo-redirect-mapperatest --help
+docker pull ghcr.io/saizul/seo-redirect-mapper:latest
+docker run --rm -v "$PWD:/work" ghcr.io/saizul/seo-redirect-mapper:latest --help
 ```
 
 Mount the folder with your input files at `/work`; output files are written there too.
