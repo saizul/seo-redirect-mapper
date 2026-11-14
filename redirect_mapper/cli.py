@@ -1,4 +1,4 @@
-"""Command line interface: ``redirect-mapper map|validate|inspect``."""
+"""Command line interface: ``redirect-mapper map|validate|verify|inspect``."""
 from __future__ import annotations
 
 import argparse
@@ -7,6 +7,7 @@ import sys
 from typing import Any, Callable, List, Optional
 
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from . import __version__, similarity
@@ -35,6 +36,7 @@ from .validate import (
     load_redirect_csv,
     validate,
 )
+from .verify import OK, VerifyInputError, load_redirects, summarize, to_report, verify
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -87,6 +89,24 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("--json", metavar="FILE", help="write issues as JSON")
     v.add_argument("-q", "--quiet", action="store_true")
 
+    r = sub.add_parser("verify", help="request old URLs on the live site and check the redirects")
+    r.add_argument("redirects",
+                   help="source,target CSV or the report.json written by `map`")
+    r.add_argument("--base", metavar="URL",
+                   help="request sources on this scheme+host instead (e.g. a staging server); "
+                        "required for bare-path sources")
+    r.add_argument("--method", choices=["HEAD", "GET"], default="HEAD",
+                   help="request method (default HEAD; falls back to GET on 405/501)")
+    r.add_argument("--rate", type=float, default=5.0, help="requests per second (default 5)")
+    r.add_argument("--timeout", type=float, default=10.0, help="per-request timeout in seconds")
+    r.add_argument("--max-hops", type=int, default=5,
+                   help="follow at most this many redirects per source (default 5)")
+    r.add_argument("--limit", type=int, help="only check the first N distinct sources")
+    r.add_argument("--json", metavar="FILE", help="write every result (with hops) as JSON")
+    r.add_argument("--fail-on-warning", action="store_true",
+                   help="exit 1 on warnings (chains, 302s, slash variants) as well as errors")
+    r.add_argument("-q", "--quiet", action="store_true")
+
     i = sub.add_parser("inspect", help="show what a URL source contains")
     i.add_argument("sources", nargs="+")
     i.add_argument("--format", default="auto", choices=["auto", "sitemap", "csv", "txt"])
@@ -95,7 +115,8 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _print_issues(console: Console, issues: List[Issue], limit: int = 25) -> None:
+def _print_issues(console: Console, issues: List[Issue], limit: int = 25,
+                  more: str = "see report.json") -> None:
     if not issues:
         console.print("[green]Validation: no issues found[/green]")
         return
@@ -107,10 +128,10 @@ def _print_issues(console: Console, issues: List[Issue], limit: int = 25) -> Non
     for issue in issues[:limit]:
         colour = "red" if issue.severity == "error" else "yellow"
         table.add_row("[%s]%s[/%s]" % (colour, issue.severity, colour), issue.code,
-                      issue.source, issue.message)
+                      escape(issue.source), escape(issue.message))
     console.print(table)
     if len(issues) > limit:
-        console.print("... and %d more (see report.json)" % (len(issues) - limit))
+        console.print("... and %d more (%s)" % (len(issues) - limit, more))
 
 
 def _print_summary(console: Console, result: MapResult) -> None:
@@ -243,6 +264,41 @@ def cmd_validate(args: argparse.Namespace, console: Console,
     return 1 if has_errors(issues) else 0
 
 
+def cmd_verify(args: argparse.Namespace, console: Console,
+               session_factory: Callable[[], Any]) -> int:
+    try:
+        entries = load_redirects(args.redirects)
+    except (LoadError, OSError, VerifyInputError) as exc:
+        console.print("[red]error:[/red] %s" % escape(str(exc)))
+        return 2
+    if not entries:
+        console.print("[red]error:[/red] no redirects found in %s" % escape(args.redirects))
+        return 2
+    try:
+        results = verify(entries, session_factory(), base=args.base, method=args.method,
+                         rate=args.rate, max_hops=args.max_hops, timeout=args.timeout,
+                         limit=args.limit)
+    except VerifyInputError as exc:
+        console.print("[red]error:[/red] %s" % escape(str(exc)))
+        return 2
+    summary = summarize(results)
+    if args.json:
+        meta = {"tool": "redirect-mapper", "version": __version__, "base": args.base,
+                "method": args.method}
+        with open(args.json, "w", encoding="utf-8", newline="") as fh:
+            fh.write(to_report(results, meta))
+    if not args.quiet:
+        console.print("Verified %d source(s): %d ok, %d warning(s), %d error(s)"
+                      % (summary["checked"], summary["ok"], summary["warnings"],
+                         summary["errors"]))
+        issues = [i for i in (r.to_issue() for r in results if r.status != OK) if i]
+        if issues:
+            _print_issues(console, issues, more="use --json for the full list")
+    if summary["errors"] or (args.fail_on_warning and summary["warnings"]):
+        return 1
+    return 0
+
+
 def cmd_inspect(args: argparse.Namespace, console: Console,
                 session_factory: Callable[[], Any]) -> int:
     try:
@@ -262,7 +318,8 @@ def main(argv: Optional[List[str]] = None,
          session_factory: Callable[[], Any] = make_session) -> int:
     args = build_parser().parse_args(argv)
     console = Console(highlight=False, soft_wrap=True)
-    handlers = {"map": cmd_map, "validate": cmd_validate, "inspect": cmd_inspect}
+    handlers = {"map": cmd_map, "validate": cmd_validate, "verify": cmd_verify,
+                "inspect": cmd_inspect}
     return handlers[args.command](args, console, session_factory)
 
 
