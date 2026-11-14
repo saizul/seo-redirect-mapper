@@ -10,6 +10,8 @@ Cloudflare and WordPress, plus a JSON report and an unmatched list for manual wo
 - Matching pipeline with scores, Bangla to Latin slug fallback, manual overrides.
 - Validation: duplicate sources, chains, loops, redirects to 404/3xx targets
   (optional rate-limited HEAD checks).
+- Post-deployment verification: request every old URL on the live (or staging)
+  server and confirm it answers a single 301/308 to the expected target.
 - Runs on Python 3.9+. [rapidfuzz](https://pypi.org/project/rapidfuzz/) is optional;
   `difflib` is used when it is missing.
 
@@ -121,6 +123,42 @@ redirect-mapper validate redirects.csv --new https://www.example.com/sitemap.xml
 HEAD checks request each distinct target once, never follow redirects, and are
 rate limited (default 5 requests per second).
 
+## Verifying a deployment
+
+`validate` checks the map on paper; `verify` checks what the server really answers
+after the rules are deployed. Each distinct source is requested without following
+redirects, the `Location` chain is walked hop by hop and the final URL is compared
+with the expected target.
+
+```bash
+# straight from the map run
+redirect-mapper verify redirects/report.json --json verify.json
+
+# any source,target CSV, tested against a staging server before the DNS switch
+redirect-mapper verify redirects.csv --base https://staging.example.com --rate 2
+```
+
+| Code | Severity | Meaning |
+| --- | --- | --- |
+| `ok` | - | One 301/308 hop straight to the expected target, which answers 2xx |
+| `not-redirecting` | error | Source answers 200/404/... instead of redirecting (rule missing) |
+| `wrong-target` | error | Redirect ends somewhere else |
+| `target-status` | error | Redirect ends at the right URL but it returns 4xx/5xx |
+| `loop`, `too-many-hops` | error | Live loop, or still redirecting after `--max-hops` (default 5) |
+| `missing-location`, `bad-location` | error | 3xx without `Location`, or to a non-HTTP URL |
+| `unreachable`, `no-host` | error | Network error; bare-path source without `--base` |
+| `temporary-redirect` | warning | First hop is 302/303/307 instead of 301/308 |
+| `chain` | warning | Reaches the target, but through more than one hop (e.g. http to https first) |
+| `target-variant` | warning | Ends at a case, trailing-slash or http/https variant of the target |
+
+`verify` exits 1 when any error is found (`--fail-on-warning` also fails on
+warnings), so it can gate a deploy pipeline. Requests are rate limited (`--rate`,
+default 5 per second), use `HEAD` with a `GET` fallback on 405/501 (`--method GET`
+to always use `GET`), never download bodies and stop after `--max-hops`.
+`--base` replaces the scheme and host of every source, and supplies one for bare
+paths; targets are compared as written. `--limit N` checks only the first N
+sources for a quick smoke test. `--json FILE` writes every result with its hops.
+
 ## Deploying
 
 **Nginx** (`nginx-redirect-map.conf`): put the `map` block in `http {}` and add
@@ -137,7 +175,8 @@ current template before uploading.
 
 **WordPress**: Redirection plugin > Tools > Import, choose CSV.
 
-Always test with `curl -I` against a handful of URLs before and after deployment.
+Always test with `curl -I` against a handful of URLs before and after deployment,
+then run `redirect-mapper verify` over the whole map.
 
 ## All options
 
