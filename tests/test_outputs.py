@@ -132,3 +132,80 @@ def test_apache_matches_decoded_path_for_unicode_sources():
 def test_apache_decodes_spaces_in_source():
     text = outputs.to_apache([mk("https://old.com/my%20page", "https://new.com/p/")])
     assert "my\\ page" in text
+
+
+def test_netlify_one_rule_per_source():
+    text, skipped = outputs.to_netlify([mk("https://old.com/about/", "https://new.com/about-us/"),
+                                        mk("https://old.com/about", "https://new.com/other/"),
+                                        mk("/", "https://new.com/home/")])
+    lines = [line for line in text.splitlines() if not line.startswith("#")]
+    assert lines == ["/about  https://new.com/about-us/  301", "/  https://new.com/home/  301"]
+    assert skipped == 0
+
+
+def test_netlify_skips_query_and_placeholder_like_paths():
+    text, skipped = outputs.to_netlify([mk("https://old.com/?p=7", "https://new.com/a/"),
+                                        mk("https://old.com/a:b", "https://new.com/b/"),
+                                        mk("https://old.com/x*y", "https://new.com/c/")])
+    assert skipped == 3
+    assert [line for line in text.splitlines() if not line.startswith("#")] == []
+
+
+def test_netlify_target_is_config_safe():
+    text, _ = outputs.to_netlify([mk("https://old.com/a", "https://new.com/x y")])
+    assert "/a  https://new.com/x%20y  301" in text
+
+
+def test_vercel_redirects_json():
+    text, count = outputs.to_vercel([mk("https://old.com/about/", "https://new.com/about-us/")])
+    data = json.loads(text)
+    assert count == 2
+    assert data["redirects"] == [
+        {"source": "/about/", "destination": "https://new.com/about-us/", "permanent": True},
+        {"source": "/about", "destination": "https://new.com/about-us/", "permanent": True},
+    ]
+
+
+def test_vercel_query_sources_use_has_conditions():
+    text, count = outputs.to_vercel([mk("https://old.com/index.php?p=7&page_id=", "https://new.com/a/")])
+    (rule,) = json.loads(text)["redirects"]
+    assert count == 1
+    assert rule["source"] == "/index.php"
+    assert rule["has"] == [{"type": "query", "key": "p", "value": "7"},
+                           {"type": "query", "key": "page_id"}]
+
+
+def test_vercel_escapes_path_to_regexp_syntax():
+    text, _ = outputs.to_vercel([mk("https://old.com/a:b(1)+c", "https://new.com/x/")])
+    sources = [rule["source"] for rule in json.loads(text)["redirects"]]
+    assert sources[0] == "/a\\:b\\(1\\)\\+c"
+
+
+def test_vercel_dedupes_and_empty():
+    text, count = outputs.to_vercel([mk("https://old.com/a", "https://new.com/1"),
+                                     mk("https://old.com/a", "https://new.com/2")])
+    assert "https://new.com/2" not in text and count == 2
+    assert json.loads(outputs.to_vercel([])[0]) == {"redirects": []}
+
+
+def test_caddy_redir_directives():
+    text, skipped = outputs.to_caddy([mk("https://old.com/about", "https://new.com/about-us/"),
+                                      mk("https://old.com/?p=7&x=1", "https://new.com/post/")])
+    assert skipped == 0
+    assert "redir /about https://new.com/about-us/ 301" in text
+    assert "redir /about/ https://new.com/about-us/ 301" in text
+    assert "@redirect_query_1 {\n    path /\n    query p=7 x=1\n}\n" in text
+    assert "redir @redirect_query_1 https://new.com/post/ 301" in text
+
+
+def test_caddy_skips_wildcards_and_quotes_braces():
+    text, skipped = outputs.to_caddy([mk("https://old.com/a*b", "https://new.com/x/")])
+    assert skipped == 1 and "redir" not in text.replace("redirect-mapper", "").replace(
+        "redirects.caddy", "")
+    assert outputs._caddy_token('a"b c') == '"a\\"b c"'
+
+
+def test_new_formats_are_registered():
+    for fmt, name in (("netlify", "_redirects"), ("vercel", "vercel.json"),
+                      ("caddy", "redirects.caddy")):
+        assert fmt in outputs.FORMATS and outputs.FILENAMES[fmt] == name

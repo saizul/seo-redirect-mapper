@@ -7,6 +7,13 @@ All notable changes are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Three new `map` output formats for static and modern hosts: `netlify` (`_redirects`),
+  `vercel` (`vercel.json` with a `redirects` array, path-to-regexp escaping and `has`
+  conditions for query-string sources, plus a warning above Vercel's 2048-rule limit) and
+  `caddy` (`redirects.caddy` with `redir` directives and named matchers for query strings).
+  Sources a format cannot express are skipped and counted in the summary.
+- Contributor community files: `CODE_OF_CONDUCT.md`, issue templates and a pull request
+  template.
 - `redirect-mapper verify`: post-deployment check that requests every source
   (from a `source,target` CSV or the `report.json` written by `map`) without
   following redirects, walks the live `Location` chain (bounded by `--max-hops`)

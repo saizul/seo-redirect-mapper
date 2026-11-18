@@ -28,7 +28,8 @@ def test_map_writes_every_format(example_args, tmp_path):
     assert run(example_args) == 0
     out = tmp_path / "out"
     for name in ["nginx-redirect-map.conf", "nginx-redirects.conf", "redirects.htaccess",
-                 "cloudflare-bulk-redirects.csv", "wordpress-redirection.csv", "report.json"]:
+                 "cloudflare-bulk-redirects.csv", "wordpress-redirection.csv", "_redirects",
+                 "vercel.json", "redirects.caddy", "report.json"]:
         assert (out / name).is_file(), name
 
 
@@ -57,6 +58,21 @@ def test_map_formats_selection(example_args, tmp_path):
     assert run(example_args + ["--formats", "nginx-map,json"]) == 0
     files = sorted(p.name for p in (tmp_path / "out").iterdir())
     assert files == ["nginx-redirect-map.conf", "report.json", "unmatched.csv"]
+
+
+def test_map_static_host_formats(example_args, tmp_path, capsys):
+    assert run(example_args + ["--formats", "netlify,vercel,caddy"]) == 0
+    out = tmp_path / "out"
+    assert sorted(p.name for p in out.iterdir() if p.name != "unmatched.csv") == [
+        "_redirects", "redirects.caddy", "vercel.json"]
+    netlify = (out / "_redirects").read_text(encoding="utf-8")
+    assert "/about-us.html  https://www.example.com/about-us/  301" in netlify
+    vercel = json.loads((out / "vercel.json").read_text(encoding="utf-8"))
+    assert {"source": "/about-us.html", "destination": "https://www.example.com/about-us/",
+            "permanent": True} in vercel["redirects"]
+    caddy = (out / "redirects.caddy").read_text(encoding="utf-8")
+    assert "redir /about-us.html https://www.example.com/about-us/ 301" in caddy
+    assert "wrote" in capsys.readouterr().out
 
 
 def test_map_rejects_unknown_format(example_args):
