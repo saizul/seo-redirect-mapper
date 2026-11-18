@@ -5,12 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "redirect-mapper"
 version = "0.1.0"
-description = "Build and validate 301 redirect maps for site migrations (Nginx, Apache, Cloudflare, WordPress)."
+description = "Build and validate 301 redirect maps for site migrations (Nginx, Apache, Cloudflare, WordPress, Netlify, Vercel, Caddy)."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Saizul Amin" }]
 requires-python = ">=3.9"
-keywords = ["seo", "redirects", "301", "site-migration", "nginx", "htaccess", "wordpress"]
+keywords = ["seo", "redirects", "301", "site-migration", "nginx", "htaccess", "wordpress",
+            "netlify", "vercel", "caddy"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",

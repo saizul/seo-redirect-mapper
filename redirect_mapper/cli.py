@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from rich.console import Console
 from rich.markup import escape
@@ -17,12 +17,16 @@ from .matching import MapResult, MatchConfig, build_map
 from .outputs import (
     FILENAMES,
     FORMATS,
+    VERCEL_MAX_REDIRECTS,
     build_report,
     to_apache,
+    to_caddy,
     to_cloudflare,
     to_json,
+    to_netlify,
     to_nginx_map,
     to_nginx_return,
+    to_vercel,
     to_wordpress_redirection,
     unmatched_csv,
 )
@@ -205,6 +209,8 @@ def cmd_map(args: argparse.Namespace, console: Console,
     os.makedirs(args.out_dir, exist_ok=True)
     written = []
     skipped_cf = 0
+    skipped: Dict[str, int] = {}
+    vercel_rules = 0
     meta = {"tool": "redirect-mapper", "version": __version__,
             "similarity_backend": similarity.backend(), "flattened": flattened}
     for fmt in formats:
@@ -219,6 +225,12 @@ def cmd_map(args: argparse.Namespace, console: Console,
             text, skipped_cf = to_cloudflare(result.matches)
         elif fmt == "wordpress":
             text = to_wordpress_redirection(result.matches)
+        elif fmt == "netlify":
+            text, skipped["Netlify"] = to_netlify(result.matches)
+        elif fmt == "vercel":
+            text, vercel_rules = to_vercel(result.matches)
+        elif fmt == "caddy":
+            text, skipped["Caddy"] = to_caddy(result.matches)
         else:
             text = to_json(build_report(result, [i.to_dict() for i in issues], meta))
         with open(path, "w", encoding="utf-8", newline="") as fh:
@@ -236,6 +248,14 @@ def cmd_map(args: argparse.Namespace, console: Console,
         if skipped_cf:
             console.print("[yellow]Cloudflare: skipped %d row(s) without host or with query "
                           "string[/yellow]" % skipped_cf)
+        for name, count in skipped.items():
+            if count:
+                console.print("[yellow]%s: skipped %d row(s) the format cannot express "
+                              "(see README)[/yellow]" % (name, count))
+        if vercel_rules > VERCEL_MAX_REDIRECTS:
+            console.print("[yellow]Vercel: %d rules exceed the %d redirects allowed in "
+                          "vercel.json; use middleware or Bulk Redirects instead[/yellow]"
+                          % (vercel_rules, VERCEL_MAX_REDIRECTS))
         for path in written:
             console.print("wrote " + path)
     if args.strict and has_errors(issues):

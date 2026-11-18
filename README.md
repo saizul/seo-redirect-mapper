@@ -3,7 +3,7 @@
 Build 301 redirect maps for site migrations. Feed it the old and new URL lists
 (sitemaps, CSV, crawl exports) and it matches every old URL to the most likely new
 one with a confidence score, then writes ready-to-deploy rules for Nginx, Apache,
-Cloudflare and WordPress, plus a JSON report and an unmatched list for manual work.
+Cloudflare, WordPress, Netlify, Vercel and Caddy, plus a JSON report and an unmatched list for manual work.
 
 - Inputs: XML sitemaps (index files, `.gz`, local or remote), CSV, text lists,
   Screaming Frog style crawl exports.
@@ -49,10 +49,14 @@ redirect-mapper map --old examples/old-sitemap.xml --new examples/new-sitemap.xm
 | `redirects.htaccess` | Apache `RedirectMatch` (or `Redirect` with `--apache-style redirect`), `mod_rewrite` for `?query` sources |
 | `cloudflare-bulk-redirects.csv` | Cloudflare Bulk Redirects list import |
 | `wordpress-redirection.csv` | Import in the Redirection plugin (Tools > Import) |
+| `_redirects` | Netlify `_redirects` file (one rule per source; Netlify normalises trailing slashes) |
+| `vercel.json` | Vercel `redirects` array; query-string sources become `has` conditions |
+| `redirects.caddy` | Caddyfile `redir` directives to `import` in a site block |
 | `report.json` | Summary, every match with method and confidence, unmatched, validation issues |
 | `unmatched.csv` | Old URLs with no acceptable match plus the top 3 suggestions |
 
-Limit output with `--formats nginx-map,json`.
+Limit output with `--formats nginx-map,json`. Format names: `nginx-map`, `nginx-return`,
+`apache`, `cloudflare`, `wordpress`, `netlify`, `vercel`, `caddy`, `json`.
 
 ## Inputs
 
@@ -174,6 +178,19 @@ unknown hosts are skipped (reported). Check the column layout against Cloudflare
 current template before uploading.
 
 **WordPress**: Redirection plugin > Tools > Import, choose CSV.
+
+**Netlify**: copy `_redirects` into the publish directory (for example `public/`). Netlify
+cannot match literal query strings, and reads `:name` and `*` in a path as placeholders, so
+those sources are skipped (reported).
+
+**Vercel**: merge the `redirects` array into your `vercel.json`. Characters that
+path-to-regexp treats as syntax (`:`, `(`, `)`, `*`, `+`, `?`, `{`, `}`) are escaped in
+`source`. Query-string sources match on the listed parameters with `has`, so requests that
+carry extra parameters redirect too. Vercel allows at most 2048 redirects in `vercel.json`;
+`map` warns when the file is larger.
+
+**Caddy**: `import redirects.caddy` inside the site block. Query-string sources use a named
+matcher with `path` and `query`; paths containing `*` (a Caddy wildcard) are skipped.
 
 Always test with `curl -I` against a handful of URLs before and after deployment,
 then run `redirect-mapper verify` over the whole map.
